@@ -1,10 +1,8 @@
 dist: trusty
-sudo: required
-language: bash
-
+root: required
+language: shell 
 before_install:
   - curl https://raw.githubusercontent.com/express42/otus-homeworks/2019-02/run.sh | bash
-
 after_success:
   - wget https://raw.githubusercontent.com/DiscordHooks/travis-ci-discord-webhook/master/send.sh
   - chmod +x send.sh

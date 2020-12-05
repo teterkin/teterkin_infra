@@ -72,3 +72,75 @@ $ ssh -A BASTION-IP -t ssh INTERNAL-HOST
 bastion_IP = 35.246.197.77
 
 someinternalhost_IP = 10.156.0.3
+
+## Автоматическое развертывание приложения на Ruby в облаке
+
+IP адреса для проверки cloud-testapp:
+
+testapp_IP = 35.246.227.187
+
+testapp_port = 9292
+
+Labels:
+
+- GCP
+- cloud-testapp
+
+> Ресурсы, созданные в этом ДЗ НЕЛЬЗЯ удалять до прохождения тестов TravisCI.
+
+> После того как тесты в рамках PR будут зеленые и будет получен approve пул
+> реквеста, ветку с ДЗ нужно смерджить и закрыть PR.
+
+Пример команды для создания облака и автоматического развертывания приложения:
+
+gcloud compute instances create reddit-app\
+  --boot-disk-size=10GB \
+  --image-family ubuntu-1604-lts \
+  --image-project=ubuntu-os-cloud \
+  --machine-type=g1-small \
+  --tags puma-server \
+  --restart-on-failure \
+  --zone=europe-west3-a \
+  --metadata startup-script='#! /bin/bash
+  wget -qO- https://gist.githubusercontent.com/teterkin/60e28fc2842a32b73eda06b42a0f83f3/raw/6ea0adf082200ad97a9a0bd94b7c039686950c06/install_ruby.sh | sudo bash - && \
+  wget -qO- https://gist.githubusercontent.com/teterkin/25d0dcd2390bb8d216577f50c83c1403/raw/2be2b3d3a37af1b32c2afb2b9ecf4f7fa675f182/install_mongodb.sh | sudo bash - && \
+  wget -qO- https://gist.githubusercontent.com/teterkin/e397b5fe355da5887d3c42c9a0bf1576/raw/c32747597f8dfa40b076b96c97ca684b553308a8/deploy.sh | sudo bash -
+  RC=$?
+  if [ "$RC" -eq 0 ]; then
+    echo "Deployment is complete. Done."
+    exit 0;
+  else
+    echo "ERROR. Exiting..."
+    exit 1;
+  fi
+  '
+
+Для проверки работы:
+
+1. Нужно перейти по ssh на только что созданный сервер и запустить команду tail
+   на syslog системы:
+
+   ```bash
+   $ ssh 35.246.227.187
+   $ tail -f /var/log/syslog
+   ```
+2. Дождитесь, когда startup-script закончит работу.
+3. Перейдите по адресу [http://35.246.227.187:9292/](http://35.246.227.187:9292/).
+4. Проверьте работу приложения.
+
+Проверка скорости развертывания:
+
+- 6 дек 2020 г.  2:59:02 – запущен скрипт создания ВМ.
+- 6 дек 2020 г.  2:59:13 – скрипт успешно завершился (машина создана).
+- 6 дек 2020 г.  3:00:39 – startup-script завершился (приложение работает).
+
+Итого на всё от создания ВМ до рабочего приложения ушло 37 секунд!!!
+
+Для создания правила брандмауэра из консоли нужно выполнить следующую команду:
+
+gcloud compute firewall-rules create default-puma-server \
+  --allow='tcp:9292' \
+  --target-tags='puma-server' \
+  --source-ranges='0.0.0.0/0' \
+  --direction='INGRESS' \
+  --network='default'

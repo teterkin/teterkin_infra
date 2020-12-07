@@ -1,5 +1,6 @@
 #!/bin/bash
 
+echo
 echo ---------------------------
 echo Installing Ruby and Bundler
 echo ---------------------------

@@ -1,5 +1,6 @@
 #!/bin/bash
 
+echo
 echo -----------------------------------------------------
 echo Installing Dependancies and Deploying the Application
 echo -----------------------------------------------------

@@ -7,7 +7,7 @@
 
 ```bash
 
-$ ssh -A BASTION-IP -t ssh INTERNAL-HOST
+ssh -A BASTION-IP -t ssh INTERNAL-HOST
 
 ```
 
@@ -28,14 +28,14 @@ $ ssh -A BASTION-IP -t ssh INTERNAL-HOST
 1. Создайте локальный конфигурационный файл ssh и назначьте файлу права доступа:
 
    ```bash
-   $ touch ~/.ssh/config
-   $ chmod 0700 ~/.ssh/config
+   touch ~/.ssh/config
+   chmod 0700 ~/.ssh/config
    ```
 
 1. Откройте файл в редакторе `vi`:
 
    ```bash
-   $ vi ~/.ssh/config
+   vi ~/.ssh/config
    ```
 
 1. Опишите секцию отосящуюся к нашему серверу:
@@ -57,7 +57,7 @@ $ ssh -A BASTION-IP -t ssh INTERNAL-HOST
    бастион достаточно набрать:
 
    ```bash
-   $ ssh someinternalhost
+   ssh someinternalhost
    ```
 
 ## Настройка VPN
@@ -93,6 +93,7 @@ Labels:
 
 Пример команды для создания облака и автоматического развертывания приложения:
 
+```bash
 gcloud compute instances create reddit-app\
   --boot-disk-size=10GB \
   --image-family ubuntu-1604-lts \
@@ -120,6 +121,7 @@ gcloud compute instances create reddit-app\
     exit 1;
   fi
   '
+```
 
 Для проверки работы:
 
@@ -127,8 +129,8 @@ gcloud compute instances create reddit-app\
    на syslog системы:
 
    ```bash
-   $ ssh 35.246.227.187
-   $ tail -f /var/log/syslog
+   ssh 35.246.227.187
+   tail -f /var/log/syslog
    ```
 2. Дождитесь, когда startup-script закончит работу.
 3. Перейдите по адресу [http://35.246.227.187:9292/](http://35.246.227.187:9292/).
@@ -144,9 +146,210 @@ gcloud compute instances create reddit-app\
 
 Для создания правила брандмауэра из консоли нужно выполнить следующую команду:
 
+```bash
 gcloud compute firewall-rules create default-puma-server \
   --allow='tcp:9292' \
   --target-tags='puma-server' \
   --source-ranges='0.0.0.0/0' \
   --direction='INGRESS' \
   --network='default'
+```
+
+## Сборка образа VM с помощью Packer
+
+### Установка Packer
+
+1. Скачайте версию *Packer* для вашей ОС, перейдя по ссылке:
+   [https://www.packer.io/downloads.html](https://www.packer.io/downloads.html).
+2. Распакуйте скачанный zip архив и поместите бинарный файл в директорию, путь
+   до которой содержится в переменной окружения *PATH*.
+3. Проверить установку Packer можно командой: `$ packer -v`
+
+### Credentials
+
+Для управления ресурсами *GCP* через сторонние приложения, такие как *Packer* и
+*Terraform*, нам нужно предоставить этим инструментам информацию (credentials)
+для аутентификации и управлению ресурсами *GCP* нашего аккаунта.
+
+### Application Default Credentials (ADC)
+
+Установка ADC позволяет приложениям, работающим с *GCP* ресурсами и использующим
+Google API библиотеки, управлять ресурсами *GCP* через авторизованные API
+вызовы, используя credentials вашего пользователя.
+
+Создайте АDC:
+
+```bash
+gcloud auth application-default login
+```
+
+### Создаем Packer template
+
+1. Создайте в репозитории *infra* директорию `packer`.
+1. Внутри директории `packer` создайте файл `ubuntu16.json`.
+
+Это и будет наш шаблон *Packer*, содержащий описание образа VM, который мы хотим
+создать.
+
+Для нашего тестового приложения мы соберем образ VM с предустановленными Ruby и
+MongoDB, так называемый baked-образ.
+
+Определим *Packer builders* в шаблоне `ubuntu16.json`:
+
+```json
+{
+  "builders": [
+      {
+          "type": "googlecompute",
+          "project_id": "infra-297519",
+          "image_name": "reddit-base-{{timestamp}}",
+          "image_family": "reddit-base",
+          "source_image_family": "ubuntu-1604-lts",
+          "zone": "europe-west1-b",
+          "ssh_username": "appuser",
+          "machine_type": "f1-micro"
+      }
+  ]
+}
+```
+
+Чтобы найти название вашего собственного проекта в GCP выполните команду
+`$ gcloud info | grep project` или команду `$ gcloud projects list`.
+
+После этого вставьте полученное название проекта в описание файла.
+
+### Provisioners
+
+Если *builders* секция отвечает за создание виртуальной машины для билда и
+создание машинного образа в **GCP**, то секция **provisioners** позволяет
+устанавливать нужное ПО, производить настройки системы и конфигурацию приложений
+на созданной VM.
+
+Используя скрипты для установки *Ruby* и *MongoDB* из предыдущего ДЗ, определим
+два провижинера.
+
+Используем [shell provisioner](https://www.packer.io/docs/provisioners/shell.html),
+который позволяет запускать *bash* команды на запущенном инстансе.
+
+После секции “builders” определим, через запятую, провижинеры внутри нашего
+шаблона для установки *Ruby* и *MongoDB*. Готовый файл будет выглядеть так:
+
+```json
+{
+    "builders": [
+        {
+            "type": "googlecompute",
+            "project_id": "infra-297519",
+            "image_name": "reddit-base-{{timestamp}}",
+            "image_family": "reddit-base",
+            "source_image_family": "ubuntu-1604-lts",
+            "zone": "europe-west1-b",
+            "ssh_username": "appuser",
+            "machine_type": "f1-micro"
+        }
+    ],
+    "provisioners": [
+        {
+            "type": "shell",
+            "script": "scripts/install_ruby.sh",
+            "execute_command": "sudo {{.Path}}"
+        },
+        {
+            "type": "shell",
+            "script": "scripts/install_mongodb.sh",
+            "execute_command": "sudo {{.Path}}"
+        }
+    ]
+}
+```
+
+Опция execute_command позволяет указать, каким способом будет запускаться
+скрипт. Т.к. команды по установке требуют sudo, то мы указываем, что запускать
+скрипт следует с sudo. 
+
+### Скрипты для провижининга
+
+Внутри директории `packer` создайте директорию `scripts` для скриптов, которые
+будут использовать провижинерами. Скопируйте в эту директорию скрипты
+`install_ruby.sh` и `install_mongodb.sh` из предыдущего ДЗ.
+
+### Проверка на ошибки
+
+Проверьте, не допустили ли вы ошибок при создании шаблона, используя команду
+packer validate:
+
+```bash
+packer validate ./ubuntu16.json
+```
+
+Поправьте ошибки, если они есть.
+
+### Packer build
+
+Если проверка на ошибки прошла успешно, то запустите build образа:
+
+```bash
+packer build ubuntu16.json
+```
+
+> В браузерной консоли можно увидеть, как Packer запустил экземпляр VM.
+
+### Проверяем созданный образ
+
+В браузерной консоли перейдите по пути `Compute Engine -> Images`. Найдите свой
+образ.
+
+Также можно проверить с помощью gcloud (отфильтровав по названию вашего
+проекта):
+
+```bash
+$ gcloud compute images list | egrep "infra|NAME"
+NAME                      PROJECT         FAMILY         DEPRECATED    STATUS
+reddit-base-1608051000    infra-297519    reddit-base                  READY
+```
+
+### Развертываем приложение
+
+Как и в прошлый раз, завернем наше тестовое приложение.
+
+Но на этот раз нам нужно будет проделать меньше работы, т.к. часть пакетов уже
+содержится в образе VM, который мы создали.
+
+1. В консоли Google Cloud создаем новую виртуальную машину.
+1. Задаем нужные характеристики машины (тип экземпляра не больше g1-small).
+1. При выборе загрузочного диска (Boot disk) нажимаем «Изменить образ» (Change).
+1. Выбираем вкладку custom images и выбираем созданный нами образ
+   «reddit-base-1608051000».
+
+### Подключение по SSH
+
+После того как экземпляр запустился, вам необходимо подключиться к экземпляру по
+SSH, используя ключи пользователя, которые вы сгенерировали на прошлом занятии.
+
+```bash
+ssh <app_user>@<instace_public_ip>
+```
+
+### Установка зависимостей и запуск приложения
+
+Для деплоя приложения можно использовать созданный вами скрипт `deploy.sh` или
+перечисленные ниже команды:
+
+```bash
+git clone -b monolith https://github.com/express42/reddit.git
+cd reddit && bundle install
+puma -d
+```
+
+Проверяем, что сервер приложения запустился:
+
+```bash
+ps aux | grep puma
+```
+
+### Проверка работы приложения
+
+1. Предварительно убедитесь, что вам доступен порт сервера приложения в правилах
+   firewall. Помните тег `puma-server`?
+1. Перейдите по адресу вашего приложения:
+   [http://34.76.244.136:9292/](http://34.76.244.136:9292/)

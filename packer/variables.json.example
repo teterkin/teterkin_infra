@@ -1,0 +1,9 @@
+{
+  "description": "Packer test example",
+  "disk_size": "50",
+  "subnetwork": "default",
+  "network_project_id": "SHARED_VPC_PROJECT",
+  "disk_type": "pd-ssd",
+  "tags": "puma-server"
+}
+

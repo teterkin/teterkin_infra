@@ -353,3 +353,139 @@ ps aux | grep puma
    firewall. Помните тег `puma-server`?
 1. Перейдите по адресу вашего приложения:
    [http://34.76.244.136:9292/](http://34.76.244.136:9292/)
+
+### Immutable infrastructure
+
+> Задание со *
+
+Чтобы попрактиковать подход к управлению инфраструктурой *Immutable*
+*infrastructure*, «запечем» (*bake*) в образ VM все зависимости приложения и сам
+код приложения. Результат должен быть таким: запускаем экземпляр из созданного
+образа и на нем сразу же имеем запущенное приложение.
+
+Для этого нам понадобится подготовить скрипты для развертывания сервера Puma в
+качестве системного сервиса (*systemd unit*).
+
+Мы создадим шаблон (`immutable.json`) в той же директории `packer`. Параметр
+`image_family` у получившегося образа по заданию должен иметь значение
+`reddit-full`.
+
+Дополнительные файлы для сервиса (`production.rb` и `puma.service`) поместим в
+директорию `packer/files`. Для запуска приложения при старте экземпляра ВМ
+создадим скрипт `deploy_service.sh` и поместим его там же где и наши скрипты
+установки базы MongoDB и Ruby (в директории `packer/scripts`).
+
+Скрипт `deploy_service.sh` должен:
+
+1. Загружать тестовое приложение из репозитория.
+1. Выполнять конфигурацию окружения сервера Puma.
+1. Создавать новый сервис в Systemd ОС Ubuntu.
+1. Запускать сервер Puma с тестовым приложением.
+1. Проверять корректность развертывания приложения.
+
+Дополнительно приведем команду для конфигурации правила брандмауэра для работы
+нашего сервера Puma и приложения в нём (точно так же как делали раньше):
+
+```bash
+gcloud compute firewall-rules create default-puma-server \
+  --allow='tcp:9292' \
+  --target-tags='puma-server' \
+  --source-ranges='0.0.0.0/0' \
+  --direction='INGRESS' \
+  --network='default'
+```
+
+Проверка созданной конфигурации на ошибки:
+
+```bash
+packer validate ./immutable.json
+```
+
+Запечем наш образ:
+
+```bash
+packer build ./immutable.json
+```
+
+Проверяем наличие созданного образа в облаке:
+
+```bash
+$ gcloud compute images list | egrep "reddit-full|NAME"
+NAME                      PROJECT         FAMILY         DEPRECATED    STATUS
+reddit-full-1608151595    infra-297519    reddit-full                  READY
+```
+
+Проверяем создание ВМ из нашего образа и автоматическое развертывание приложения
+и всех его зависимостей:
+
+Как и в прошлый раз, завернули наше тестовое приложение.
+
+Но на этот раз нам вообще не нужно ничего делать, т.к. все пакеты, сервисы и
+само приложение содержатся в образе VM, который мы создали.
+
+1. В консоли Google Cloud создаем новую виртуальную машину.
+1. Задаем нужные характеристики машины (тип экземпляра не больше g1-small).
+1. При выборе загрузочного диска (Boot disk) нажимаем «Изменить образ» (Change).
+1. Выбираем вкладку custom images и выбираем созданный нами образ
+   «reddit-full-`ДОПОЛНИТЬ!`».
+1. В разделе «Networking» указываем `puma-server` в поле «Network tags».
+
+Теперь, после запуска ВМ с нашим новым образом, все необходимое ПО должно быть
+предустановлено, а наше приложение должно запускаться автоматически, как сервис,
+во время запуска системы. Проверим работу приложения:
+
+Перейдите по адресу вашего приложения:
+[http://35.240.37.94:9292](http://35.240.37.94:9292)
+
+### Запуск подготовленной машины из скрипта
+
+> Второе задание со *
+
+Для ускорения работы можно запускать виртуальную машину с помощью командной
+строки и утилиты gcloud.
+
+Создадим shell-скрипт с названием create-reddit-vm.sh в директории
+config-scripts.
+
+Запишите в него команду которая запустит виртуальную машину из образа
+подготовленного нами в рамках этого ДЗ, из семейства reddit-full.
+
+Запуск и результат работы команды:
+
+```bash
+$ date; ./create-reddit-vm.sh; date
+
+17 дек 2020 г.  2:31:26
+
+-------------------------------
+Starting my VM made with Packer
+-------------------------------
+Adding firewall rule...
+Creating firewall...⠹Created [https://www.googleapis.com/compute/v1/projects/infra-297519/global/firewalls/default-puma-server].
+Creating firewall...done.
+NAME                 NETWORK  DIRECTION  PRIORITY  ALLOW     DENY  DISABLED
+default-puma-server  default  INGRESS    1000      tcp:9292        False
+Creating VM...
+WARNING: You have selected a disk size of under [200GB]. This may result in poor I/O performance.
+For more information, see: https://developers.google.com/compute/docs/disks#
+performance.
+Created [https://www.googleapis.com/compute/v1/projects/infra-297519/zones/europe-west1-b/instances/reddit-app].
+NAME        ZONE            MACHINE_TYPE  PREEMPTIBLE  INTERNAL_IP  EXTERNAL_IP   STATUS
+reddit-app  europe-west1-b  f1-micro                   10.132.0.15  35.205.129.9  RUNNING
+Application started successfully!
+
+17 дек 2020 г.  2:31:46
+```
+
+Проверяем работу приложения:
+[http://35.205.129.9:9292](http://35.205.129.9:9292)
+
+Все ок.
+
+**Итого:**
+
+- Новая ВМ создается из подготовленного с помощью *Packer* образа за **20**
+  **секунд!**
+- Приложение *Ruby* на *Puma*-сервере хранящее пользователей в *Mondgo DB*
+  корректно функционирует.
+- **Immutable Infrastructure рулит!**

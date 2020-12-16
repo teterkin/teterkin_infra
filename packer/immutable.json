@@ -1,0 +1,41 @@
+{
+  "builders": [
+      {
+          "type": "googlecompute",
+          "project_id": "infra-297519",
+          "image_name": "reddit-full-{{timestamp}}",
+          "image_family": "reddit-full",
+          "source_image_family": "ubuntu-1604-lts",
+          "zone": "europe-west1-b",
+          "ssh_username": "appuser",
+          "machine_type": "f1-micro"
+      }
+  ],
+  "provisioners": [
+      {
+          "type": "shell",
+          "script": "scripts/install_ruby.sh",
+          "execute_command": "sudo {{.Path}}"
+      },
+      {
+          "type": "shell",
+          "script": "scripts/install_mongodb.sh",
+          "execute_command": "sudo {{.Path}}"
+      },
+      {
+        "type": "file",
+        "source": "files/production.rb",
+        "destination": "/home/appuser/production.rb"
+      },
+      {
+        "type": "file",
+        "source": "files/puma.service",
+        "destination": "/home/appuser/puma.service"
+      },
+      {
+        "type": "shell",
+        "script": "scripts/deploy_service.sh",
+        "execute_command": "{{.Path}}"
+      }
+  ]
+}
